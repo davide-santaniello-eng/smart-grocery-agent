@@ -1,14 +1,17 @@
 -- Auto-generated Grocery Price & Offers Synchronization Script
 -- Safe idempotent upsert for canonical stores and real market offers
 
--- 1. Populate Canonical Stores
-INSERT INTO stores (id, user_id, name, chain, address, city, postal_code, visit_cost) VALUES
-('e1000000-0000-0000-0000-000000000001', NULL, 'Esselunga Superstore', 'Esselunga', 'Via Washington, Milano', 'Milano', '20146', 1.5),
-('e1000000-0000-0000-0000-000000000002', NULL, 'Coop - Piazza Lodi', 'Coop', 'Piazza Lodi, Milano', 'Milano', '20137', 1.0),
-('e1000000-0000-0000-0000-000000000003', NULL, 'Conad City', 'Conad', 'Corso Buenos Aires, Milano', 'Milano', '20124', 1.0),
-('e1000000-0000-0000-0000-000000000004', NULL, 'Lidl Discount', 'Lidl', 'Viale Ortles, Milano', 'Milano', '20139', 1.2),
-('e1000000-0000-0000-0000-000000000005', NULL, 'Carrefour Market', 'Carrefour', 'Via Bezzi, Milano', 'Milano', '20148', 1.3)
-ON CONFLICT (id) DO UPDATE SET visit_cost = EXCLUDED.visit_cost;
+-- 1. Allow canonical stores without user_id
+ALTER TABLE stores ALTER COLUMN user_id DROP NOT NULL;
+
+-- 2. Populate Canonical Stores
+INSERT INTO stores (id, user_id, name, chain, address, visit_cost_override) VALUES
+('e1000000-0000-0000-0000-000000000001', NULL, 'Esselunga Superstore', 'Esselunga', 'Via Washington, Milano', 1.5),
+('e1000000-0000-0000-0000-000000000002', NULL, 'Coop - Piazza Lodi', 'Coop', 'Piazza Lodi, Milano', 1.0),
+('e1000000-0000-0000-0000-000000000003', NULL, 'Conad City', 'Conad', 'Corso Buenos Aires, Milano', 1.0),
+('e1000000-0000-0000-0000-000000000004', NULL, 'Lidl Discount', 'Lidl', 'Viale Ortles, Milano', 1.2),
+('e1000000-0000-0000-0000-000000000005', NULL, 'Carrefour Market', 'Carrefour', 'Via Bezzi, Milano', 1.3)
+ON CONFLICT (id) DO UPDATE SET visit_cost_override = EXCLUDED.visit_cost_override;
 
 -- 2. Populate Latest Store Offers with Real Flyer Promotions
 INSERT INTO store_offers (store_id, variant_id, price, standard_price, price_per_base_unit, is_promotion, promo_description, source) VALUES

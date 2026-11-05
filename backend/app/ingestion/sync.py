@@ -165,16 +165,19 @@ def generate_sql_insert_script() -> str:
         "-- Auto-generated Grocery Price & Offers Synchronization Script",
         "-- Safe idempotent upsert for canonical stores and real market offers",
         "",
-        "-- 1. Populate Canonical Stores",
-        "INSERT INTO stores (id, user_id, name, chain, address, city, postal_code, visit_cost) VALUES",
+        "-- 1. Allow canonical stores without user_id",
+        "ALTER TABLE stores ALTER COLUMN user_id DROP NOT NULL;",
+        "",
+        "-- 2. Populate Canonical Stores",
+        "INSERT INTO stores (id, user_id, name, chain, address, visit_cost_override) VALUES",
     ]
 
     store_vals = []
     for s in CANONICAL_STORES:
         store_vals.append(
-            f"('{s['id']}', NULL, '{s['name']}', '{s['chain']}', '{s['address']}', '{s['city']}', '{s['postal_code']}', {s['visit_cost']})"
+            f"('{s['id']}', NULL, '{s['name']}', '{s['chain']}', '{s['address']}', {s['visit_cost']})"
         )
-    lines.append(",\n".join(store_vals) + "\nON CONFLICT (id) DO UPDATE SET visit_cost = EXCLUDED.visit_cost;")
+    lines.append(",\n".join(store_vals) + "\nON CONFLICT (id) DO UPDATE SET visit_cost_override = EXCLUDED.visit_cost_override;")
 
     lines.append("\n-- 2. Populate Latest Store Offers with Real Flyer Promotions")
     lines.append("INSERT INTO store_offers (store_id, variant_id, price, standard_price, price_per_base_unit, is_promotion, promo_description, source) VALUES")
