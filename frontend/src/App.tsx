@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShoppingCart, 
   Store as StoreIcon, 
@@ -7,15 +7,17 @@ import {
   Trash2, 
   CheckCircle2, 
   Clock,
-  Layers
+  Layers,
+  Database
 } from 'lucide-react';
 import { ItemRequirement, Store, ProductOffer, OptimizationResult } from './types';
+import { fetchProducts, ProductRecord } from './services/supabase';
 
-// Default initial state with realistic Italian products
+// Default initial shopping list
 const INITIAL_ITEMS: ItemRequirement[] = [
-  { item_id: 'spaghetti', name: 'Spaghetti di Semola', min_quantity: 1000, base_unit: 'g', is_mandatory: true, preferred_brands: ['Barilla'] },
-  { item_id: 'olio_evo', name: 'Olio Extra Vergine 1L', min_quantity: 1000, base_unit: 'ml', is_mandatory: true, preferred_brands: ['Monini'] },
-  { item_id: 'latte', name: 'Latte UHT Parz. Scremato', min_quantity: 2000, base_unit: 'ml', is_mandatory: true, preferred_brands: ['Granarolo'] },
+  { item_id: 'spaghetti', name: 'Spaghetti', min_quantity: 1000, base_unit: 'g', is_mandatory: true, preferred_brands: ['Barilla'] },
+  { item_id: 'olio_evo', name: 'Olio Extra Vergine di Oliva', min_quantity: 1000, base_unit: 'ml', is_mandatory: true, preferred_brands: ['Monini'] },
+  { item_id: 'latte', name: 'Latte Parzialmente Scremato UHT', min_quantity: 2000, base_unit: 'ml', is_mandatory: true, preferred_brands: ['Granarolo'] },
   { item_id: 'caffe', name: 'Caffè Macinato per Moka', min_quantity: 500, base_unit: 'g', is_mandatory: true, preferred_brands: ['Lavazza'] },
 ];
 
@@ -58,10 +60,29 @@ export function App() {
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<OptimizationResult | null>(null);
 
+  // Live Supabase catalog products
+  const [catalogProducts, setCatalogProducts] = useState<ProductRecord[]>([]);
+  const [dbConnected, setDbConnected] = useState<boolean>(false);
+
   // New item form state
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState('1000');
   const [newItemUnit, setNewItemUnit] = useState('g');
+
+  useEffect(() => {
+    async function loadCatalog() {
+      try {
+        const prods = await fetchProducts();
+        if (prods.length > 0) {
+          setCatalogProducts(prods);
+          setDbConnected(true);
+        }
+      } catch (err) {
+        console.warn('Could not load Supabase catalog in background:', err);
+      }
+    }
+    loadCatalog();
+  }, []);
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,6 +100,24 @@ export function App() {
       },
     ]);
     setNewItemName('');
+  };
+
+  const handleQuickAdd = (product: ProductRecord) => {
+    // Check if already in list
+    if (items.some((i) => i.name.toLowerCase() === product.name.toLowerCase())) {
+      return;
+    }
+    setItems([
+      ...items,
+      {
+        item_id: product.id,
+        name: product.name,
+        min_quantity: product.base_unit === 'g' ? 1000 : product.base_unit === 'ml' ? 1000 : 6,
+        base_unit: product.base_unit,
+        is_mandatory: true,
+        preferred_brands: [],
+      },
+    ]);
   };
 
   const handleRemoveItem = (id: string) => {
@@ -108,7 +147,6 @@ export function App() {
         const data = await response.json();
         setResult(data);
       } else {
-        // Fallback for static GitHub Pages demonstration if backend is not running
         simulateLocalOptimization();
       }
     } catch {
@@ -139,7 +177,7 @@ export function App() {
             items: [
               {
                 item_id: 'olio_evo',
-                item_name: 'Olio Extra Vergine 1L',
+                item_name: 'Olio Extra Vergine di Oliva',
                 variant_id: 'v_monini_1l',
                 variant_name: 'Olio EVO Classico Monini 1L',
                 brand: 'Monini',
@@ -161,7 +199,7 @@ export function App() {
             items: [
               {
                 item_id: 'spaghetti',
-                item_name: 'Spaghetti di Semola',
+                item_name: 'Spaghetti',
                 variant_id: 'v_comb_500',
                 variant_name: 'Spaghetti Combino 500g',
                 brand: 'Combino',
@@ -174,7 +212,7 @@ export function App() {
               },
               {
                 item_id: 'latte',
-                item_name: 'Latte UHT Parz. Scremato',
+                item_name: 'Latte Parzialmente Scremato UHT',
                 variant_id: 'v_milbona_1l',
                 variant_name: 'Latte UHT Milbona 1L',
                 brand: 'Milbona',
@@ -220,10 +258,17 @@ export function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              OR-Tools CP-SAT Attivo
-            </span>
+            {dbConnected ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                <Database className="h-3 w-3 text-emerald-600" />
+                Supabase Online ({catalogProducts.length} prodotti)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-200">
+                <Database className="h-3 w-3 text-slate-400" />
+                Connessione DB...
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -242,10 +287,10 @@ export function App() {
               </div>
 
               {/* Add item form */}
-              <form onSubmit={handleAddItem} className="mb-4 flex flex-wrap gap-2">
+              <form onSubmit={handleAddItem} className="mb-3 flex flex-wrap gap-2">
                 <input
                   type="text"
-                  placeholder="Aggiungi prodotto (es. Pasta, Olio, Latte)..."
+                  placeholder="Aggiungi prodotto personalizzato..."
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
                   className="flex-1 min-w-[180px] rounded-xl border border-slate-200 px-3.5 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -262,9 +307,9 @@ export function App() {
                   onChange={(e) => setNewItemUnit(e.target.value)}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
                 >
-                  <option value="g">grammi (g)</option>
-                  <option value="ml">millilitri (ml)</option>
-                  <option value="unit">pezzi (pz)</option>
+                  <option value="g">g</option>
+                  <option value="ml">ml</option>
+                  <option value="unit">pz</option>
                 </select>
                 <button
                   type="submit"
@@ -274,6 +319,36 @@ export function App() {
                   Aggiungi
                 </button>
               </form>
+
+              {/* Quick Pick from Supabase Catalog */}
+              {catalogProducts.length > 0 && (
+                <div className="mb-4 pt-1">
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Aggiunta rapida da catalogo Supabase:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {catalogProducts.map((p) => {
+                      const isAdded = items.some((i) => i.name.toLowerCase() === p.name.toLowerCase());
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleQuickAdd(p)}
+                          disabled={isAdded}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs transition ${
+                            isAdded
+                              ? 'bg-slate-100 text-slate-400 cursor-default'
+                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60 font-medium'
+                          }`}
+                        >
+                          <Plus className="h-3 w-3" />
+                          {p.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Items list */}
               <div className="divide-y divide-slate-100">
