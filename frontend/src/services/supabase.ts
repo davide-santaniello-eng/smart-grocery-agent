@@ -388,3 +388,43 @@ export async function subscribeToInventory(
     supabase.removeChannel(channel);
   };
 }
+
+export interface SupabaseOfferRecord {
+  offer_id: string;
+  store_id: string;
+  store_name: string;
+  store_chain: string;
+  variant_id: string;
+  variant_name: string;
+  brand?: string;
+  product_id: string;
+  product_name: string;
+  price: number;
+  standard_price?: number;
+  price_per_base_unit: number;
+  base_unit: string;
+  package_size: number;
+  package_unit: string;
+  base_quantity: number;
+  is_promotion: boolean;
+  promo_description?: string;
+  observed_at: string;
+}
+
+export async function fetchLatestOffers(): Promise<SupabaseOfferRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('v_latest_offers')
+      .select('*')
+      .order('price', { ascending: true });
+
+    if (error) {
+      console.warn('Could not query v_latest_offers:', error);
+      return [];
+    }
+    return (data || []) as SupabaseOfferRecord[];
+  } catch (err) {
+    console.error('Unexpected error in fetchLatestOffers:', err);
+    return [];
+  }
+}
