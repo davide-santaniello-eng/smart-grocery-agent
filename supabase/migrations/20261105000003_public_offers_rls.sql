@@ -47,8 +47,10 @@ WITH CHECK (
     )
 );
 
--- 3. Update v_latest_offers view with security_invoker = true
-CREATE OR REPLACE VIEW v_latest_offers 
+-- 3. Drop existing view to avoid column renaming conflicts, then recreate with security_invoker
+DROP VIEW IF EXISTS v_latest_offers;
+
+CREATE VIEW v_latest_offers 
 WITH (security_invoker = true) AS
 SELECT DISTINCT ON (so.store_id, so.variant_id)
     so.id AS offer_id,
@@ -57,7 +59,7 @@ SELECT DISTINCT ON (so.store_id, so.variant_id)
     s.chain AS store_chain,
     so.variant_id,
     pv.name AS variant_name,
-    pv.brand,
+    pv.brand AS variant_brand,
     p.id AS product_id,
     p.name AS product_name,
     so.price,

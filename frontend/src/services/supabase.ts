@@ -397,14 +397,15 @@ export interface SupabaseOfferRecord {
   variant_id: string;
   variant_name: string;
   brand?: string;
+  variant_brand?: string;
   product_id: string;
   product_name: string;
   price: number;
   standard_price?: number;
   price_per_base_unit: number;
   base_unit: string;
-  package_size: number;
-  package_unit: string;
+  package_size?: number;
+  package_unit?: string;
   base_quantity: number;
   is_promotion: boolean;
   promo_description?: string;

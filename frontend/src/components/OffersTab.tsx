@@ -27,7 +27,7 @@ export function OffersTab({ offers: fallbackOffers, onAddOfferToList }: Props) {
           item_id: o.product_id,
           variant_id: o.variant_id,
           variant_name: o.variant_name,
-          brand: o.brand,
+          brand: o.brand || o.variant_brand,
           package_price: Number(o.price),
           package_base_quantity: Number(o.base_quantity),
           is_promotion: o.is_promotion,
