@@ -40,6 +40,59 @@ export interface ProductVariantRecord {
   barcode?: string;
 }
 
+export interface ShoppingListRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  status: 'draft' | 'active' | 'completed' | 'archived';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShoppingListItemRecord {
+  id: string;
+  list_id: string;
+  product_id?: string | null;
+  item_name?: string | null;
+  preferred_variant_id?: string | null;
+  quantity: number;
+  unit: string;
+  base_quantity?: number | null;
+  is_mandatory: boolean;
+  preferred_brands: string[];
+  notes?: string | null;
+  is_checked: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryEventRecord {
+  id?: string;
+  user_id?: string;
+  product_id: string;
+  variant_id?: string | null;
+  purchase_item_id?: string | null;
+  event_type: 'purchase' | 'consumption' | 'waste' | 'adjustment' | 'expiration';
+  quantity_delta: number;
+  base_unit: string;
+  notes?: string | null;
+  event_date?: string;
+}
+
+export interface CurrentInventoryViewItem {
+  user_id?: string;
+  product_id: string;
+  product_name: string;
+  category_name?: string;
+  base_unit: string;
+  min_stock_level: number;
+  reorder_threshold: number;
+  current_stock: number;
+  is_below_reorder_threshold: boolean;
+  last_activity_date?: string;
+}
+
 // -----------------------------------------------------------------------------
 // Authentication Helpers
 // -----------------------------------------------------------------------------
@@ -70,7 +123,7 @@ export async function getCurrentSession(): Promise<Session | null> {
 }
 
 // -----------------------------------------------------------------------------
-// Data Fetching
+// Catalog Data Fetching
 // -----------------------------------------------------------------------------
 export async function fetchCategories(): Promise<CategoryRecord[]> {
   const { data, error } = await supabase
@@ -109,4 +162,229 @@ export async function fetchProductVariants(): Promise<ProductVariantRecord[]> {
     return [];
   }
   return data || [];
+}
+
+// -----------------------------------------------------------------------------
+// Realtime Shopping List Management
+// -----------------------------------------------------------------------------
+export async function getOrCreateActiveShoppingList(userId: string): Promise<ShoppingListRecord | null> {
+  try {
+    const { data, error } = await supabase
+      .from('shopping_lists')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn('Error fetching active shopping list:', error);
+      return null;
+    }
+
+    if (data && data.length > 0) {
+      return data[0] as ShoppingListRecord;
+    }
+
+    // Create a new active shopping list for this user/family
+    const { data: created, error: createError } = await supabase
+      .from('shopping_lists')
+      .insert({
+        user_id: userId,
+        name: 'Lista Spesa Famiglia',
+        status: 'active',
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating default shopping list:', createError);
+      return null;
+    }
+    return created as ShoppingListRecord;
+  } catch (err) {
+    console.error('Unexpected error in getOrCreateActiveShoppingList:', err);
+    return null;
+  }
+}
+
+export async function fetchShoppingListItems(listId: string): Promise<ShoppingListItemRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('shopping_list_items')
+      .select('*')
+      .eq('list_id', listId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching shopping list items:', error);
+      return [];
+    }
+    return (data || []) as ShoppingListItemRecord[];
+  } catch (err) {
+    console.error('Unexpected error in fetchShoppingListItems:', err);
+    return [];
+  }
+}
+
+export async function addShoppingListItem(item: {
+  list_id: string;
+  item_name: string;
+  product_id?: string | null;
+  quantity: number;
+  unit: string;
+  base_quantity?: number | null;
+  preferred_brands?: string[];
+  is_mandatory?: boolean;
+}): Promise<ShoppingListItemRecord | null> {
+  try {
+    const { data, error } = await supabase
+      .from('shopping_list_items')
+      .insert({
+        list_id: item.list_id,
+        item_name: item.item_name,
+        product_id: item.product_id || null,
+        quantity: item.quantity,
+        unit: item.unit,
+        base_quantity: item.base_quantity || item.quantity,
+        preferred_brands: item.preferred_brands || [],
+        is_mandatory: item.is_mandatory ?? true,
+        is_checked: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding item to Supabase shopping list:', error);
+      return null;
+    }
+    return data as ShoppingListItemRecord;
+  } catch (err) {
+    console.error('Unexpected error in addShoppingListItem:', err);
+    return null;
+  }
+}
+
+export async function deleteShoppingListItem(itemId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('shopping_list_items')
+      .delete()
+      .eq('id', itemId);
+
+    if (error) {
+      console.error('Error deleting shopping list item:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Unexpected error in deleteShoppingListItem:', err);
+    return false;
+  }
+}
+
+export async function toggleShoppingListItem(itemId: string, isChecked: boolean): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('shopping_list_items')
+      .update({ is_checked: isChecked, updated_at: new Date().toISOString() })
+      .eq('id', itemId);
+
+    if (error) {
+      console.error('Error toggling shopping list item:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Unexpected error in toggleShoppingListItem:', err);
+    return false;
+  }
+}
+
+export async function subscribeToShoppingList(
+  listId: string,
+  onChange: () => void
+): Promise<() => void> {
+  const channel = supabase
+    .channel(`realtime_shopping_list_${listId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'shopping_list_items',
+        filter: `list_id=eq.${listId}`,
+      },
+      () => {
+        onChange();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Realtime Household Inventory Tracking
+// -----------------------------------------------------------------------------
+export async function fetchCurrentInventory(userId: string): Promise<CurrentInventoryViewItem[]> {
+  try {
+    const { data, error } = await supabase
+      .from('v_current_inventory')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.warn('Could not query v_current_inventory:', error);
+      return [];
+    }
+    return (data || []) as CurrentInventoryViewItem[];
+  } catch (err) {
+    console.error('Unexpected error in fetchCurrentInventory:', err);
+    return [];
+  }
+}
+
+export async function recordInventoryEvent(event: InventoryEventRecord): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('inventory_events')
+      .insert(event);
+
+    if (error) {
+      console.error('Error recording inventory event:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Unexpected error in recordInventoryEvent:', err);
+    return false;
+  }
+}
+
+export async function subscribeToInventory(
+  userId: string,
+  onChange: () => void
+): Promise<() => void> {
+  const channel = supabase
+    .channel(`realtime_inventory_${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'inventory_events',
+        filter: `user_id=eq.${userId}`,
+      },
+      () => {
+        onChange();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }

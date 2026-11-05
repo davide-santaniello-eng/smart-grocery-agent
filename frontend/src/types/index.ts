@@ -6,6 +6,8 @@ export interface ItemRequirement {
   max_quantity?: number | null;
   is_mandatory: boolean;
   preferred_brands: string[];
+  db_id?: string;
+  is_checked?: boolean;
 }
 
 export interface Store {

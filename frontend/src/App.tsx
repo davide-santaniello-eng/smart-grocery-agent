@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ShoppingCart, 
   Store as StoreIcon, 
@@ -15,7 +15,8 @@ import {
   Receipt,
   MessageSquare,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  RefreshCw
 } from 'lucide-react';
 import { Session } from '@supabase/supabase-js';
 import { ItemRequirement, Store, ProductOffer, OptimizationResult, AllocatedItem } from './types';
@@ -24,7 +25,15 @@ import {
   ProductRecord, 
   getCurrentSession, 
   signOutUser, 
-  supabase 
+  supabase,
+  getOrCreateActiveShoppingList,
+  fetchShoppingListItems,
+  addShoppingListItem,
+  deleteShoppingListItem,
+  toggleShoppingListItem,
+  subscribeToShoppingList,
+  recordInventoryEvent,
+  ShoppingListRecord
 } from './services/supabase';
 import { LoginScreen } from './components/LoginScreen';
 import { NaturalLanguageModal } from './components/NaturalLanguageModal';
@@ -81,8 +90,11 @@ export function App() {
   // Tab navigation
   const [activeTab, setActiveTab] = useState<'shopping' | 'instore' | 'pantry' | 'offers' | 'receipts'>('shopping');
 
-  // Grocery List state
+  // Supabase Live Shopping List state
+  const [activeList, setActiveList] = useState<ShoppingListRecord | null>(null);
   const [items, setItems] = useState<ItemRequirement[]>(INITIAL_ITEMS);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
   const [stores] = useState<Store[]>(INITIAL_STORES);
   const [maxStores, setMaxStores] = useState<number>(2);
   const [loading, setLoading] = useState<boolean>(false);
@@ -142,50 +154,236 @@ export function App() {
     loadCatalog();
   }, [session]);
 
+  // 3. Connect to Supabase Shopping List & Realtime Sync
+  const loadShoppingList = useCallback(async (userId: string) => {
+    setIsSyncing(true);
+    try {
+      const list = await getOrCreateActiveShoppingList(userId);
+      if (!list) {
+        setIsSyncing(false);
+        return;
+      }
+      setActiveList(list);
+
+      const dbItems = await fetchShoppingListItems(list.id);
+      if (dbItems && dbItems.length > 0) {
+        const mapped: ItemRequirement[] = dbItems.map((db) => ({
+          item_id: db.id,
+          db_id: db.id,
+          name: db.item_name || 'Articolo',
+          min_quantity: Number(db.quantity) || 1,
+          base_unit: db.unit || 'g',
+          is_mandatory: db.is_mandatory,
+          preferred_brands: db.preferred_brands || [],
+          is_checked: db.is_checked,
+        }));
+        setItems(mapped);
+      } else {
+        // If the user's DB list is completely empty, initialize it with default essentials
+        for (const initItem of INITIAL_ITEMS) {
+          await addShoppingListItem({
+            list_id: list.id,
+            item_name: initItem.name,
+            quantity: initItem.min_quantity,
+            unit: initItem.base_unit,
+            preferred_brands: initItem.preferred_brands,
+            is_mandatory: initItem.is_mandatory,
+          });
+        }
+        const refreshed = await fetchShoppingListItems(list.id);
+        const mapped: ItemRequirement[] = refreshed.map((db) => ({
+          item_id: db.id,
+          db_id: db.id,
+          name: db.item_name || 'Articolo',
+          min_quantity: Number(db.quantity) || 1,
+          base_unit: db.unit || 'g',
+          is_mandatory: db.is_mandatory,
+          preferred_brands: db.preferred_brands || [],
+          is_checked: db.is_checked,
+        }));
+        setItems(mapped);
+      }
+    } catch (err) {
+      console.warn('Error syncing shopping list with Supabase:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      loadShoppingList(session.user.id);
+    }
+  }, [session, loadShoppingList]);
+
+  // 4. Setup Supabase Realtime channel for instant multi-device synchronization
+  useEffect(() => {
+    if (!activeList) return;
+    let unsubscribe: (() => void) | undefined;
+
+    subscribeToShoppingList(activeList.id, async () => {
+      setIsSyncing(true);
+      const dbItems = await fetchShoppingListItems(activeList.id);
+      const mapped: ItemRequirement[] = dbItems.map((db) => ({
+        item_id: db.id,
+        db_id: db.id,
+        name: db.item_name || 'Articolo',
+        min_quantity: Number(db.quantity) || 1,
+        base_unit: db.unit || 'g',
+        is_mandatory: db.is_mandatory,
+        preferred_brands: db.preferred_brands || [],
+        is_checked: db.is_checked,
+      }));
+      setItems(mapped);
+      setIsSyncing(false);
+    }).then((unsub) => {
+      unsubscribe = unsub;
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [activeList]);
+
   const handleSignOut = async () => {
     await signOutUser();
     setSession(null);
+    setActiveList(null);
   };
 
-  const handleAddItem = (e: React.FormEvent) => {
+  const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim()) return;
-    const id = newItemName.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
-    setItems([
-      ...items,
-      {
-        item_id: id,
-        name: newItemName.trim(),
-        min_quantity: parseFloat(newItemQty) || 1,
-        base_unit: newItemUnit,
-        is_mandatory: true,
-        preferred_brands: [],
-      },
-    ]);
+    const name = newItemName.trim();
+    const qty = parseFloat(newItemQty) || 1;
+    const unit = newItemUnit;
+
+    if (activeList) {
+      const created = await addShoppingListItem({
+        list_id: activeList.id,
+        item_name: name,
+        quantity: qty,
+        unit,
+      });
+      if (created) {
+        setItems((prev) => [
+          ...prev,
+          {
+            item_id: created.id,
+            db_id: created.id,
+            name: created.item_name || name,
+            min_quantity: Number(created.quantity),
+            base_unit: created.unit,
+            is_mandatory: created.is_mandatory,
+            preferred_brands: [],
+            is_checked: false,
+          },
+        ]);
+      }
+    } else {
+      const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+      setItems((prev) => [
+        ...prev,
+        {
+          item_id: id,
+          name,
+          min_quantity: qty,
+          base_unit: unit,
+          is_mandatory: true,
+          preferred_brands: [],
+        },
+      ]);
+    }
     setNewItemName('');
   };
 
-  const handleQuickAdd = (product: ProductRecord) => {
+  const handleQuickAdd = async (product: ProductRecord) => {
     if (items.some((i) => i.name.toLowerCase() === product.name.toLowerCase())) return;
-    setItems([
-      ...items,
-      {
-        item_id: product.id,
-        name: product.name,
-        min_quantity: product.base_unit === 'g' ? 1000 : product.base_unit === 'ml' ? 1000 : 6,
-        base_unit: product.base_unit,
-        is_mandatory: true,
-        preferred_brands: [],
-      },
-    ]);
+    const qty = product.base_unit === 'g' ? 1000 : product.base_unit === 'ml' ? 1000 : 6;
+
+    if (activeList) {
+      const created = await addShoppingListItem({
+        list_id: activeList.id,
+        item_name: product.name,
+        product_id: product.id,
+        quantity: qty,
+        unit: product.base_unit,
+      });
+      if (created) {
+        setItems((prev) => [
+          ...prev,
+          {
+            item_id: created.id,
+            db_id: created.id,
+            name: product.name,
+            min_quantity: qty,
+            base_unit: product.base_unit,
+            is_mandatory: true,
+            preferred_brands: [],
+            is_checked: false,
+          },
+        ]);
+      }
+    } else {
+      setItems((prev) => [
+        ...prev,
+        {
+          item_id: product.id,
+          name: product.name,
+          min_quantity: qty,
+          base_unit: product.base_unit,
+          is_mandatory: true,
+          preferred_brands: [],
+        },
+      ]);
+    }
   };
 
-  const handleAddMultiple = (newItems: ItemRequirement[]) => {
-    setItems([...items, ...newItems]);
+  const handleAddMultiple = async (newItems: ItemRequirement[]) => {
+    if (activeList) {
+      for (const item of newItems) {
+        await addShoppingListItem({
+          list_id: activeList.id,
+          item_name: item.name,
+          quantity: item.min_quantity,
+          unit: item.base_unit,
+          preferred_brands: item.preferred_brands,
+          is_mandatory: item.is_mandatory,
+        });
+      }
+      const refreshed = await fetchShoppingListItems(activeList.id);
+      const mapped: ItemRequirement[] = refreshed.map((db) => ({
+        item_id: db.id,
+        db_id: db.id,
+        name: db.item_name || 'Articolo',
+        min_quantity: Number(db.quantity) || 1,
+        base_unit: db.unit || 'g',
+        is_mandatory: db.is_mandatory,
+        preferred_brands: db.preferred_brands || [],
+        is_checked: db.is_checked,
+      }));
+      setItems(mapped);
+    } else {
+      setItems((prev) => [...prev, ...newItems]);
+    }
   };
 
-  const handleRemoveItem = (id: string) => {
-    setItems(items.filter((item) => item.item_id !== id));
+  const handleRemoveItem = async (id: string) => {
+    const target = items.find((i) => i.item_id === id);
+    if (target?.db_id) {
+      await deleteShoppingListItem(target.db_id);
+    }
+    setItems((prev) => prev.filter((item) => item.item_id !== id));
+  };
+
+  const handleToggleRawItem = async (itemId: string, isChecked: boolean) => {
+    const target = items.find((i) => i.item_id === itemId);
+    if (target?.db_id) {
+      await toggleShoppingListItem(target.db_id, isChecked);
+    }
+    setItems((prev) =>
+      prev.map((i) => (i.item_id === itemId ? { ...i, is_checked: isChecked } : i))
+    );
   };
 
   const runOptimization = async () => {
@@ -307,9 +505,37 @@ export function App() {
     }, 300);
   };
 
-  const handleCompleteShopping = (purchasedItems: AllocatedItem[]) => {
+  const handleCompleteShopping = async (purchasedItems: AllocatedItem[]) => {
+    // 1. In Supabase: record purchase in inventory_events for each item so pantry is automatically restocked!
+    if (session) {
+      for (const p of purchasedItems) {
+        const matchingProduct = catalogProducts.find(
+          (cp) => cp.name.toLowerCase() === p.item_name.toLowerCase()
+        );
+        if (matchingProduct) {
+          await recordInventoryEvent({
+            user_id: session.user.id,
+            product_id: matchingProduct.id,
+            variant_id: p.variant_id.startsWith('v_') ? null : p.variant_id,
+            event_type: 'purchase',
+            quantity_delta: p.total_base_quantity,
+            base_unit: matchingProduct.base_unit,
+            notes: `Spesa completata: ${p.package_quantity}x ${p.variant_name}`,
+          });
+        }
+      }
+    }
+
+    // 2. Remove purchased items from the active shopping list in Supabase
     const purchasedNames = purchasedItems.map((p) => p.item_name.toLowerCase());
-    setItems(items.filter((i) => !purchasedNames.includes(i.name.toLowerCase())));
+    const toRemove = items.filter((i) => purchasedNames.includes(i.name.toLowerCase()));
+    for (const item of toRemove) {
+      if (item.db_id) {
+        await deleteShoppingListItem(item.db_id);
+      }
+    }
+
+    setItems((prev) => prev.filter((i) => !purchasedNames.includes(i.name.toLowerCase())));
     setActiveTab('pantry');
   };
 
@@ -349,8 +575,11 @@ export function App() {
           <div className="flex items-center gap-2.5">
             {dbConnected ? (
               <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                <Database className="h-3 w-3 text-emerald-600" />
-                Supabase Online ({catalogProducts.length} prodotti)
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Supabase Realtime Attivo
               </span>
             ) : (
               <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-200">
@@ -436,8 +665,13 @@ export function App() {
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 className="text-base font-bold text-slate-900">Lista della Spesa</h2>
-                    <p className="text-xs text-slate-500">{items.length} prodotti inseriti per il calcolo</p>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-slate-900">Lista della Spesa</h2>
+                      {isSyncing && (
+                        <RefreshCw className="h-3.5 w-3.5 text-emerald-600 animate-spin" />
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">{items.length} prodotti sincronizzati nel cloud</p>
                   </div>
                   <button
                     onClick={() => setIsNlModalOpen(true)}
@@ -548,114 +782,102 @@ export function App() {
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {stores.map((s) => (
                     <div key={s.store_id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
-                      <StoreIcon className="mx-auto mb-1.5 h-5 w-5 text-slate-500" />
-                      <div className="text-xs font-bold text-slate-800 truncate">{s.name}</div>
-                      <div className="text-[11px] text-slate-500">Visita: €{s.visit_cost.toFixed(2)}</div>
+                      <div className="mx-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm border border-slate-200 text-slate-700">
+                        <StoreIcon className="h-4 w-4" />
+                      </div>
+                      <div className="text-xs font-bold text-slate-800">{s.chain}</div>
+                      <div className="text-[11px] text-slate-400">Visita: €{s.visit_cost.toFixed(2)}</div>
                     </div>
                   ))}
-                </div>
-
-                <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 p-3 border border-slate-100">
-                  <div className="text-xs font-medium text-slate-700">Massimo supermercati per spesa:</div>
-                  <div className="flex gap-1.5">
-                    {[1, 2, 3].map((num) => (
-                      <button
-                        key={num}
-                        onClick={() => setMaxStores(num)}
-                        className={`h-8 w-8 rounded-lg text-xs font-bold transition ${
-                          maxStores === num
-                            ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Right Column: Optimizer Action & Results (5 cols) */}
+            {/* Right Column: Optimization Engine (5 cols) */}
             <div className="space-y-6 lg:col-span-5">
-              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 via-white to-emerald-50/30 p-5 shadow-sm">
-                <div className="flex items-center gap-2 text-emerald-800 font-bold mb-1">
-                  <Sparkles className="h-5 w-5 text-emerald-600" />
-                  <span>Risolutore Google OR-Tools</span>
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Ottimizzazione Carrello</h2>
+                  <p className="text-xs text-slate-500">Google OR-Tools CP-SAT Solver</p>
                 </div>
-                <p className="text-xs text-slate-600 mb-4">
-                  Calcola la combinazione di supermercati e formati confezione che minimizza la spesa totale, penalizzando viaggi inutili.
-                </p>
+
+                <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
+                  <div className="flex justify-between text-xs font-semibold text-slate-700 mb-2">
+                    <span>N° Max Supermercati</span>
+                    <span className="font-bold text-emerald-700">{maxStores} punti vendita</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="4"
+                    value={maxStores}
+                    onChange={(e) => setMaxStores(parseInt(e.target.value))}
+                    className="w-full accent-emerald-600 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                    <span>1 solo negozio</span>
+                    <span>Max 4 negozi</span>
+                  </div>
+                </div>
 
                 <button
                   onClick={runOptimization}
                   disabled={loading || items.length === 0}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-md shadow-emerald-600/20 transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 transition disabled:opacity-50"
                 >
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                      Calcolo ottimo in corso...
-                    </>
-                  ) : (
-                    <>
-                      <Layers className="h-4 w-4" />
-                      Calcola Spesa Ottimale
-                    </>
-                  )}
+                  <Sparkles className="h-4 w-4" />
+                  {loading ? 'Calcolo Ottimo in corso...' : 'Calcola Spesa Più Economica'}
                 </button>
               </div>
 
               {/* Optimization Results */}
               {result && (
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm animate-in fade-in duration-300">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      Piano Spesa: {result.status}
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      <span className="text-sm font-bold text-slate-900">Spesa Ottimizzata</span>
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                      <Clock className="h-3 w-3" />
-                      {result.solver_time_ms} ms
-                    </div>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-100">
+                      {result.status}
+                    </span>
                   </div>
 
-                  {/* Savings Banner */}
+                  {/* Savings Highlight */}
                   {result.estimated_savings_vs_single_store && result.estimated_savings_vs_single_store > 0 && (
-                    <div className="flex items-center gap-3 rounded-xl bg-amber-50 p-3 border border-amber-200 text-amber-900">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white font-black text-xs">
-                        €
+                    <div className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 p-3.5 text-white shadow-sm">
+                      <div className="text-[11px] font-medium text-emerald-100 uppercase tracking-wider">Risparmio Stimato Famiglia</div>
+                      <div className="text-xl font-black mt-0.5">
+                        €{result.estimated_savings_vs_single_store.toFixed(2)} risparmiati!
                       </div>
-                      <div className="text-xs">
-                        <span className="font-bold">Risparmi €{result.estimated_savings_vs_single_store.toFixed(2)}</span> rispetto all'acquisto in un unico supermercato!
+                      <div className="text-[11px] text-emerald-100 mt-0.5">
+                        Rispetto al comprare tutto in un unico supermercato più caro.
                       </div>
                     </div>
                   )}
 
-                  {/* Cost Totals */}
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  {/* Summary Totals */}
+                  <div className="grid grid-cols-2 gap-2 text-center">
                     <div className="rounded-xl bg-slate-50 p-2.5 border border-slate-100">
-                      <div className="text-[10px] uppercase font-bold text-slate-400">Prodotti</div>
-                      <div className="text-sm font-bold text-slate-800">€{result.product_cost.toFixed(2)}</div>
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">Costo Totale Prodotti</div>
+                      <div className="text-base font-black text-slate-800 mt-0.5">€{result.product_cost.toFixed(2)}</div>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-2.5 border border-slate-100">
-                      <div className="text-[10px] uppercase font-bold text-slate-400">Viaggi</div>
-                      <div className="text-sm font-bold text-slate-800">€{result.travel_cost.toFixed(2)}</div>
-                    </div>
-                    <div className="rounded-xl bg-emerald-50 p-2.5 border border-emerald-200">
-                      <div className="text-[10px] uppercase font-bold text-emerald-700">Totale</div>
-                      <div className="text-sm font-black text-emerald-800">€{result.total_cost.toFixed(2)}</div>
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">Costo Visite Negozi</div>
+                      <div className="text-base font-black text-slate-800 mt-0.5">€{result.travel_cost.toFixed(2)}</div>
                     </div>
                   </div>
 
-                  {/* Action: Open In-Store Mode */}
-                  <button
-                    onClick={() => setActiveTab('instore')}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800 shadow-sm"
-                  >
-                    <ShoppingBag className="h-4 w-4 text-emerald-400" />
-                    Apri Modalità Supermercato (Spunta dal vivo)
-                  </button>
+                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Tempo risolutore: {result.solver_time_ms} ms
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Layers className="h-3 w-3" />
+                      {result.selected_stores.length} supermercati scelti
+                    </span>
+                  </div>
 
                   {/* Allocated Stores and items */}
                   <div className="space-y-3 pt-2">
@@ -702,16 +924,46 @@ export function App() {
         {activeTab === 'instore' && (
           <InStoreModeTab
             selectedStores={result?.selected_stores || []}
+            rawItems={items}
             onCompleteShopping={handleCompleteShopping}
             onGoToOptimizer={() => setActiveTab('shopping')}
+            onToggleRawItem={handleToggleRawItem}
           />
         )}
 
         {/* TAB 3: Pantry & TSB Forecast */}
         {activeTab === 'pantry' && (
           <PantryTab
+            userId={session.user.id}
+            catalogProducts={catalogProducts}
             onAddToList={(item) => {
-              setItems([...items, item]);
+              if (activeList) {
+                addShoppingListItem({
+                  list_id: activeList.id,
+                  item_name: item.name,
+                  product_id: item.item_id,
+                  quantity: item.min_quantity,
+                  unit: item.base_unit,
+                }).then((created) => {
+                  if (created) {
+                    setItems((prev) => [
+                      ...prev,
+                      {
+                        item_id: created.id,
+                        db_id: created.id,
+                        name: item.name,
+                        min_quantity: item.min_quantity,
+                        base_unit: item.base_unit,
+                        is_mandatory: true,
+                        preferred_brands: [],
+                        is_checked: false,
+                      },
+                    ]);
+                  }
+                });
+              } else {
+                setItems((prev) => [...prev, item]);
+              }
               setActiveTab('shopping');
             }}
           />
@@ -722,7 +974,32 @@ export function App() {
           <OffersTab
             offers={INITIAL_OFFERS}
             onAddOfferToList={(item) => {
-              setItems([...items, item]);
+              if (activeList) {
+                addShoppingListItem({
+                  list_id: activeList.id,
+                  item_name: item.name,
+                  quantity: item.min_quantity,
+                  unit: item.base_unit,
+                }).then((created) => {
+                  if (created) {
+                    setItems((prev) => [
+                      ...prev,
+                      {
+                        item_id: created.id,
+                        db_id: created.id,
+                        name: item.name,
+                        min_quantity: item.min_quantity,
+                        base_unit: item.base_unit,
+                        is_mandatory: true,
+                        preferred_brands: [],
+                        is_checked: false,
+                      },
+                    ]);
+                  }
+                });
+              } else {
+                setItems((prev) => [...prev, item]);
+              }
             }}
           />
         )}
@@ -739,7 +1016,7 @@ export function App() {
             activeTab === 'shopping' ? 'text-emerald-600' : 'text-slate-400'
           }`}
         >
-          <ShoppingCart className="h-5 w-5 mb-0.5" />
+          <ShoppingCart className="h-4 w-4 mb-0.5" />
           Spesa
         </button>
         <button
@@ -748,7 +1025,7 @@ export function App() {
             activeTab === 'instore' ? 'text-emerald-600' : 'text-slate-400'
           }`}
         >
-          <ShoppingBag className="h-5 w-5 mb-0.5" />
+          <ShoppingBag className="h-4 w-4 mb-0.5" />
           In-Store
         </button>
         <button
@@ -757,7 +1034,7 @@ export function App() {
             activeTab === 'pantry' ? 'text-emerald-600' : 'text-slate-400'
           }`}
         >
-          <Package className="h-5 w-5 mb-0.5" />
+          <Package className="h-4 w-4 mb-0.5" />
           Dispensa
         </button>
         <button
@@ -766,7 +1043,7 @@ export function App() {
             activeTab === 'offers' ? 'text-emerald-600' : 'text-slate-400'
           }`}
         >
-          <Tag className="h-5 w-5 mb-0.5" />
+          <Tag className="h-4 w-4 mb-0.5" />
           Offerte
         </button>
         <button
@@ -775,12 +1052,12 @@ export function App() {
             activeTab === 'receipts' ? 'text-emerald-600' : 'text-slate-400'
           }`}
         >
-          <Receipt className="h-5 w-5 mb-0.5" />
-          Scontrini
+          <Receipt className="h-4 w-4 mb-0.5" />
+          Scontrino
         </button>
       </nav>
 
-      {/* Natural Language Input Modal */}
+      {/* Natural Language Modal */}
       <NaturalLanguageModal
         isOpen={isNlModalOpen}
         onClose={() => setIsNlModalOpen(false)}
