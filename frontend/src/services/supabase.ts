@@ -1,9 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, Session, User } from '@supabase/supabase-js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://shiakflrglavejigokig.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_qEztE42l6elMhPbon6oVuA_1FxH2qh4';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 
 export interface CategoryRecord {
   id: string;
@@ -34,6 +40,38 @@ export interface ProductVariantRecord {
   barcode?: string;
 }
 
+// -----------------------------------------------------------------------------
+// Authentication Helpers
+// -----------------------------------------------------------------------------
+export async function signInWithEmail(email: string, password: string): Promise<{ user: User | null; session: Session | null; error: Error | null }> {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  return { user: data.user, session: data.session, error };
+}
+
+export async function signUpWithEmail(email: string, password: string): Promise<{ user: User | null; session: Session | null; error: Error | null }> {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  });
+  return { user: data.user, session: data.session, error };
+}
+
+export async function signOutUser(): Promise<{ error: Error | null }> {
+  const { error } = await supabase.auth.signOut();
+  return { error };
+}
+
+export async function getCurrentSession(): Promise<Session | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
+}
+
+// -----------------------------------------------------------------------------
+// Data Fetching
+// -----------------------------------------------------------------------------
 export async function fetchCategories(): Promise<CategoryRecord[]> {
   const { data, error } = await supabase
     .from('categories')

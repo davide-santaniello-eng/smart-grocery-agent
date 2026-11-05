@@ -13,10 +13,20 @@ import {
   Package,
   Tag,
   Receipt,
-  MessageSquare
+  MessageSquare,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
+import { Session } from '@supabase/supabase-js';
 import { ItemRequirement, Store, ProductOffer, OptimizationResult, AllocatedItem } from './types';
-import { fetchProducts, ProductRecord } from './services/supabase';
+import { 
+  fetchProducts, 
+  ProductRecord, 
+  getCurrentSession, 
+  signOutUser, 
+  supabase 
+} from './services/supabase';
+import { LoginScreen } from './components/LoginScreen';
 import { NaturalLanguageModal } from './components/NaturalLanguageModal';
 import { InStoreModeTab } from './components/InStoreModeTab';
 import { PantryTab } from './components/PantryTab';
@@ -25,7 +35,7 @@ import { ReceiptsTab } from './components/ReceiptsTab';
 
 // Default initial shopping list
 const INITIAL_ITEMS: ItemRequirement[] = [
-  { item_id: 'spaghetti', name: 'Spaghetti di Semola', min_quantity: 1000, base_unit: 'g', is_mandatory: true, preferred_brands: ['Barilla'] },
+  { item_id: 'spaghetti', name: 'Spaghetti', min_quantity: 1000, base_unit: 'g', is_mandatory: true, preferred_brands: ['Barilla'] },
   { item_id: 'olio_evo', name: 'Olio Extra Vergine di Oliva', min_quantity: 1000, base_unit: 'ml', is_mandatory: true, preferred_brands: ['Monini'] },
   { item_id: 'latte', name: 'Latte Parzialmente Scremato UHT', min_quantity: 2000, base_unit: 'ml', is_mandatory: true, preferred_brands: ['Granarolo'] },
   { item_id: 'caffe', name: 'Caffè Macinato per Moka', min_quantity: 500, base_unit: 'g', is_mandatory: true, preferred_brands: ['Lavazza'] },
@@ -64,6 +74,11 @@ const INITIAL_OFFERS: ProductOffer[] = [
 ];
 
 export function App() {
+  // Authentication session state
+  const [session, setSession] = useState<Session | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+
+  // Tab navigation
   const [activeTab, setActiveTab] = useState<'shopping' | 'instore' | 'pantry' | 'offers' | 'receipts'>('shopping');
 
   // Grocery List state
@@ -85,8 +100,35 @@ export function App() {
   const [newItemQty, setNewItemQty] = useState('1000');
   const [newItemUnit, setNewItemUnit] = useState('g');
 
+  // 1. Check Authentication on Mount
+  useEffect(() => {
+    async function initAuth() {
+      try {
+        const s = await getCurrentSession();
+        setSession(s);
+      } catch (e) {
+        console.error('Error fetching session:', e);
+      } finally {
+        setAuthChecking(false);
+      }
+    }
+    initAuth();
+
+    // Listen for auth state changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      setAuthChecking(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // 2. Load Catalog when user is authenticated
   useEffect(() => {
     async function loadCatalog() {
+      if (!session) return;
       try {
         const prods = await fetchProducts();
         if (prods.length > 0) {
@@ -98,7 +140,12 @@ export function App() {
       }
     }
     loadCatalog();
-  }, []);
+  }, [session]);
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    setSession(null);
+  };
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,7 +263,7 @@ export function App() {
             items: [
               {
                 item_id: 'spaghetti',
-                item_name: 'Spaghetti di Semola',
+                item_name: 'Spaghetti',
                 variant_id: 'v_comb_500',
                 variant_name: 'Spaghetti Combino 500g',
                 brand: 'Combino',
@@ -261,11 +308,29 @@ export function App() {
   };
 
   const handleCompleteShopping = (purchasedItems: AllocatedItem[]) => {
-    // Remove purchased items from the shopping list
     const purchasedNames = purchasedItems.map((p) => p.item_name.toLowerCase());
     setItems(items.filter((i) => !purchasedNames.includes(i.name.toLowerCase())));
     setActiveTab('pantry');
   };
+
+  // If loading session on initial page load
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md animate-pulse">
+            <ShoppingCart className="h-6 w-6" />
+          </div>
+          <span className="text-xs font-bold text-slate-500">Verifica credenziali in corso...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not authenticated, show protected login screen
+  if (!session) {
+    return <LoginScreen onLoginSuccess={() => {}} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-24 sm:pb-16">
@@ -281,18 +346,33 @@ export function App() {
               <p className="text-xs text-slate-500">Ottimizzatore Spesa & Scorte Famiglia</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             {dbConnected ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
                 <Database className="h-3 w-3 text-emerald-600" />
                 Supabase Online ({catalogProducts.length} prodotti)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-200">
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-200">
                 <Database className="h-3 w-3 text-slate-400" />
                 Connessione DB...
               </span>
             )}
+
+            {/* User Profile & Logout */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 pl-2.5 pr-1 py-1 text-xs">
+              <UserIcon className="h-3.5 w-3.5 text-slate-500" />
+              <span className="font-bold text-slate-700 max-w-[120px] sm:max-w-[160px] truncate">
+                {session.user.email}
+              </span>
+              <button
+                onClick={handleSignOut}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-800 transition"
+                title="Disconnetti"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
