@@ -429,3 +429,72 @@ export async function fetchLatestOffers(): Promise<SupabaseOfferRecord[]> {
     return [];
   }
 }
+
+export async function recordReceiptPurchase(
+  userId: string,
+  receipt: {
+    storeName: string;
+    date: string;
+    total: number;
+    items: {
+      name: string;
+      quantity: number;
+      price: number;
+      matchedProductId?: string;
+      baseUnit: string;
+      baseQuantity: number;
+    }[];
+  }
+): Promise<boolean> {
+  try {
+    // 1. Insert into purchases table
+    const { data: purchaseData, error: purchaseErr } = await supabase
+      .from('purchases')
+      .insert({
+        user_id: userId,
+        purchase_date: receipt.date,
+        total_amount: receipt.total,
+        source: 'ocr',
+        notes: `Scontrino scansionato: ${receipt.storeName} (${receipt.items.length} articoli)`,
+      })
+      .select()
+      .single();
+
+    if (purchaseErr) {
+      console.warn('Could not record purchase in purchases table:', purchaseErr);
+    }
+
+    const purchaseId = purchaseData?.id;
+
+    // 2. Insert items into purchase_items and trigger inventory restock
+    for (const item of receipt.items) {
+      if (purchaseId) {
+        await supabase.from('purchase_items').insert({
+          purchase_id: purchaseId,
+          custom_product_name: item.name,
+          package_quantity: item.quantity,
+          total_base_quantity: item.baseQuantity,
+          unit_price: item.quantity > 0 ? item.price / item.quantity : item.price,
+          total_price: item.price,
+        });
+      }
+
+      // Record inventory restock event if product is linked
+      if (item.matchedProductId) {
+        await recordInventoryEvent({
+          user_id: userId,
+          product_id: item.matchedProductId,
+          purchase_item_id: purchaseId,
+          event_type: 'purchase',
+          quantity_delta: item.baseQuantity,
+          base_unit: item.baseUnit,
+          notes: `Ricarica da scontrino ${receipt.storeName}`,
+        });
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('Error saving receipt purchase to Supabase:', err);
+    return false;
+  }
+}

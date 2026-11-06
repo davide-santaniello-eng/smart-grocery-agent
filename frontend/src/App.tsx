@@ -33,6 +33,7 @@ import {
   toggleShoppingListItem,
   subscribeToShoppingList,
   recordInventoryEvent,
+  fetchLatestOffers,
   ShoppingListRecord
 } from './services/supabase';
 import { LoginScreen } from './components/LoginScreen';
@@ -93,6 +94,7 @@ export function App() {
   // Supabase Live Shopping List state
   const [activeList, setActiveList] = useState<ShoppingListRecord | null>(null);
   const [items, setItems] = useState<ItemRequirement[]>(INITIAL_ITEMS);
+  const [offers, setOffers] = useState<ProductOffer[]>(INITIAL_OFFERS);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const [stores] = useState<Store[]>(INITIAL_STORES);
@@ -137,7 +139,7 @@ export function App() {
     };
   }, []);
 
-  // 2. Load Catalog when user is authenticated
+  // 2. Load Catalog and Latest Offers when user is authenticated
   useEffect(() => {
     async function loadCatalog() {
       if (!session) return;
@@ -147,8 +149,25 @@ export function App() {
           setCatalogProducts(prods);
           setDbConnected(true);
         }
+
+        const liveOffers = await fetchLatestOffers();
+        if (liveOffers.length > 0) {
+          const mapped: ProductOffer[] = liveOffers.map((o) => ({
+            offer_id: o.offer_id,
+            store_id: 's_' + o.store_chain.toLowerCase(),
+            item_id: o.product_id,
+            variant_id: o.variant_id,
+            variant_name: o.variant_name,
+            brand: o.brand || o.variant_brand,
+            package_price: Number(o.price),
+            package_base_quantity: Number(o.base_quantity),
+            is_promotion: o.is_promotion,
+            promo_description: o.promo_description,
+          }));
+          setOffers(mapped);
+        }
       } catch (err) {
-        console.warn('Could not load Supabase catalog:', err);
+        console.warn('Could not load Supabase catalog or offers:', err);
       }
     }
     loadCatalog();
@@ -392,7 +411,7 @@ export function App() {
       const payload = {
         items,
         stores,
-        offers: INITIAL_OFFERS,
+        offers: offers,
         config: {
           max_stores: maxStores,
           enforce_single_sku_per_item: true,
@@ -972,7 +991,7 @@ export function App() {
         {/* TAB 4: Offers Explorer */}
         {activeTab === 'offers' && (
           <OffersTab
-            offers={INITIAL_OFFERS}
+            offers={offers}
             onAddOfferToList={(item) => {
               if (activeList) {
                 addShoppingListItem({
@@ -1005,7 +1024,15 @@ export function App() {
         )}
 
         {/* TAB 5: Receipts & OCR */}
-        {activeTab === 'receipts' && <ReceiptsTab />}
+        {activeTab === 'receipts' && (
+          <ReceiptsTab
+            userId={session.user.id}
+            catalogProducts={catalogProducts}
+            onReceiptProcessed={() => {
+              setActiveTab('pantry');
+            }}
+          />
+        )}
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
