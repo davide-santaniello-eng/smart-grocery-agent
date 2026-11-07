@@ -16,7 +16,8 @@ import {
   MessageSquare,
   LogOut,
   User as UserIcon,
-  RefreshCw
+  RefreshCw,
+  Activity
 } from 'lucide-react';
 import { Session } from '@supabase/supabase-js';
 import { ItemRequirement, Store, ProductOffer, OptimizationResult, AllocatedItem } from './types';
@@ -42,6 +43,7 @@ import { InStoreModeTab } from './components/InStoreModeTab';
 import { PantryTab } from './components/PantryTab';
 import { OffersTab } from './components/OffersTab';
 import { ReceiptsTab } from './components/ReceiptsTab';
+import { DiagnosticsTab } from './components/DiagnosticsTab';
 import { optimizeGroceryBasket } from './utils/optimizer';
 
 // Default initial shopping list
@@ -116,7 +118,7 @@ export function App() {
   const [authChecking, setAuthChecking] = useState<boolean>(true);
 
   // Tab navigation
-  const [activeTab, setActiveTab] = useState<'shopping' | 'instore' | 'pantry' | 'offers' | 'receipts'>('shopping');
+  const [activeTab, setActiveTab] = useState<'shopping' | 'instore' | 'pantry' | 'offers' | 'receipts' | 'diagnostics'>('shopping');
 
   // Supabase Live Shopping List state
   const [activeList, setActiveList] = useState<ShoppingListRecord | null>(null);
@@ -519,18 +521,26 @@ export function App() {
           </div>
           <div className="flex items-center gap-2.5">
             {dbConnected ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+              <button
+                onClick={() => setActiveTab('diagnostics')}
+                title="Stato del sistema: Clicca per vedere le spie di controllo"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition cursor-pointer"
+              >
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                Supabase Realtime Attivo
-              </span>
+                Spie Sistema: OK
+              </button>
             ) : (
-              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-200">
-                <Database className="h-3 w-3 text-slate-400" />
-                Connessione DB...
-              </span>
+              <button
+                onClick={() => setActiveTab('diagnostics')}
+                title="Stato del sistema: Clicca per vedere le spie di controllo"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-100 transition cursor-pointer"
+              >
+                <Database className="h-3 w-3 text-amber-500" />
+                Spie Sistema: Check
+              </button>
             )}
 
             {/* User Profile & Logout */}
@@ -596,6 +606,15 @@ export function App() {
           >
             <Receipt className="h-3.5 w-3.5" />
             Carica Scontrino
+          </button>
+          <button
+            onClick={() => setActiveTab('diagnostics')}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 transition ${
+              activeTab === 'diagnostics' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Activity className="h-3.5 w-3.5 text-emerald-400" />
+            Diagnostica & Spie
           </button>
         </div>
       </header>
@@ -960,6 +979,15 @@ export function App() {
             }}
           />
         )}
+
+        {/* TAB 6: Diagnostics & Health Dashboard */}
+        {activeTab === 'diagnostics' && (
+          <DiagnosticsTab
+            userId={session.user.id}
+            offers={offers}
+            onGoToTab={setActiveTab}
+          />
+        )}
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
@@ -1008,6 +1036,15 @@ export function App() {
         >
           <Receipt className="h-4 w-4 mb-0.5" />
           Scontrino
+        </button>
+        <button
+          onClick={() => setActiveTab('diagnostics')}
+          className={`flex flex-col items-center p-1.5 rounded-lg text-[10px] font-bold transition ${
+            activeTab === 'diagnostics' ? 'text-emerald-600' : 'text-slate-400'
+          }`}
+        >
+          <Activity className="h-4 w-4 mb-0.5" />
+          Diagnostica
         </button>
       </nav>
 
