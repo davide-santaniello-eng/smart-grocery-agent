@@ -53,35 +53,61 @@ const INITIAL_ITEMS: ItemRequirement[] = [
 ];
 
 const INITIAL_STORES: Store[] = [
-  { store_id: 's_esselunga', name: 'Esselunga - Via Washington', chain: 'Esselunga', visit_cost: 1.50 },
-  { store_id: 's_coop', name: 'Coop - Piazza Lodi', chain: 'Coop', visit_cost: 1.00 },
-  { store_id: 's_conad', name: 'Conad City', chain: 'Conad', visit_cost: 1.00 },
-  { store_id: 's_lidl', name: 'Lidl', chain: 'Lidl', visit_cost: 1.20 },
+  // Score 1: Vicinissimi (Cambiago)
+  { store_id: 's_gigante_cambiago', name: 'Il Gigante Supermercati (Cambiago)', chain: 'Il Gigante', visit_cost: 0.50 },
+  { store_id: 's_md_cambiago', name: 'MD S.p.A. (Cambiago)', chain: 'MD', visit_cost: 0.50 },
+  
+  // Score 2: A pochi minuti (Gorgonzola, Caponago, Cavenago, Pessano, Agrate)
+  { store_id: 's_famila_gorgonzola', name: 'Famila Superstore (Gorgonzola)', chain: 'Famila', visit_cost: 1.20 },
+  { store_id: 's_conad_gorgonzola', name: 'CONAD (Gorgonzola)', chain: 'Conad', visit_cost: 1.20 },
+  { store_id: 's_carrefour_gorgonzola', name: 'Carrefour Market (Gorgonzola)', chain: 'Carrefour', visit_cost: 1.20 },
+  { store_id: 's_crai_gorgonzola', name: 'Crai (Gorgonzola)', chain: 'Crai', visit_cost: 1.20 },
+  { store_id: 's_carrefour_caponago', name: 'Carrefour Express (Caponago)', chain: 'Carrefour', visit_cost: 1.20 },
+  { store_id: 's_crai_cavenago', name: 'CRAI (Cavenago di Brianza)', chain: 'Crai', visit_cost: 1.20 },
+  { store_id: 's_ins_pessano', name: "iN's Mercato (Pessano con Bornago)", chain: "iN's", visit_cost: 1.20 },
+  { store_id: 's_unes_pessano', name: 'Unes (Pessano con Bornago)', chain: 'Unes', visit_cost: 1.20 },
+  { store_id: 's_conad_agrate', name: 'CONAD (Agrate Brianza)', chain: 'Conad', visit_cost: 1.20 },
+  { store_id: 's_unes_agrate', name: 'Unes (Agrate Brianza)', chain: 'Unes', visit_cost: 1.20 },
+
+  // Score 3: Più distanti (Carugate, Bussero, Cassina de' Pecchi, Melzo)
+  { store_id: 's_carrefour_carosello', name: 'Carrefour Iper Carosello (Carugate)', chain: 'Carrefour', visit_cost: 2.00 },
+  { store_id: 's_coop_bussero', name: 'Coop (Bussero)', chain: 'Coop', visit_cost: 1.80 },
+  { store_id: 's_oksigma_bussero', name: 'OKSIGMA (Bussero)', chain: 'Sigma', visit_cost: 1.80 },
+  { store_id: 's_unes_cassina', name: "Unes (Cassina de' Pecchi)", chain: 'Unes', visit_cost: 1.80 },
+  { store_id: 's_sigma_melzo', name: 'Supermercato Sigma Brambilla (Melzo)', chain: 'Sigma', visit_cost: 2.00 },
+  { store_id: 's_md_melzo', name: 'MD S.p.A. (Melzo)', chain: 'MD', visit_cost: 2.00 },
 ];
 
-// Sample multi-store market offers (demonstrating real-world split basket advantage)
+// Sample multi-store market offers for Cambiago & surrounding local stores
 const INITIAL_OFFERS: ProductOffer[] = [
   // Spaghetti
-  { offer_id: 'o_spagh_ess', store_id: 's_esselunga', item_id: 'spaghetti', variant_id: 'v_bar_500', variant_name: 'Spaghetti N. 5 Barilla 500g', brand: 'Barilla', package_price: 1.29, package_base_quantity: 500, is_promotion: false },
-  { offer_id: 'o_spagh_coop', store_id: 's_coop', item_id: 'spaghetti', variant_id: 'v_bar_500', variant_name: 'Spaghetti N. 5 Barilla 500g', brand: 'Barilla', package_price: 1.35, package_base_quantity: 500, is_promotion: false },
-  { offer_id: 'o_spagh_lidl', store_id: 's_lidl', item_id: 'spaghetti', variant_id: 'v_comb_500', variant_name: 'Spaghetti Combino 500g', brand: 'Combino', package_price: 0.79, package_base_quantity: 500, is_promotion: false },
+  { offer_id: 'o_spagh_gigante', store_id: 's_gigante_cambiago', item_id: 'spaghetti', variant_id: 'v_bar_500', variant_name: 'Spaghetti N. 5 Barilla 500g', brand: 'Barilla', package_price: 0.99, package_base_quantity: 500, is_promotion: true, promo_description: 'Sconto 23% Blukart' },
+  { offer_id: 'o_spagh_md_camb', store_id: 's_md_cambiago', item_id: 'spaghetti', variant_id: 'v_comb_500', variant_name: 'Spaghetti MD Primi Prezzi 500g', brand: 'MD', package_price: 0.75, package_base_quantity: 500, is_promotion: false },
+  { offer_id: 'o_spagh_famila', store_id: 's_famila_gorgonzola', item_id: 'spaghetti', variant_id: 'v_bar_500', variant_name: 'Spaghetti N. 5 Barilla 500g', brand: 'Barilla', package_price: 0.89, package_base_quantity: 500, is_promotion: true, promo_description: 'Maxi Sconto' },
+  { offer_id: 'o_spagh_carosello', store_id: 's_carrefour_carosello', item_id: 'spaghetti', variant_id: 'v_bar_500', variant_name: 'Spaghetti N. 5 Barilla 500g', brand: 'Barilla', package_price: 0.85, package_base_quantity: 500, is_promotion: true, promo_description: 'Sottocosto Carosello' },
+  { offer_id: 'o_spagh_coop', store_id: 's_coop_bussero', item_id: 'spaghetti', variant_id: 'v_bar_500', variant_name: 'Spaghetti N. 5 Barilla 500g', brand: 'Barilla', package_price: 1.35, package_base_quantity: 500, is_promotion: false },
   
-  // Olio EVO (Promo at Coop: €6.50 vs €11.90)
-  { offer_id: 'o_olio_ess', store_id: 's_esselunga', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 10.90, package_base_quantity: 1000, is_promotion: false },
-  { offer_id: 'o_olio_coop', store_id: 's_coop', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 6.50, package_base_quantity: 1000, is_promotion: true, promo_description: 'Sconto 40% Soci' },
-  { offer_id: 'o_olio_conad', store_id: 's_conad', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 11.50, package_base_quantity: 1000, is_promotion: false },
-  { offer_id: 'o_olio_lidl', store_id: 's_lidl', item_id: 'olio_evo', variant_id: 'v_primadonna_1l', variant_name: 'Olio EVO Primadonna 1L', brand: 'Primadonna', package_price: 8.99, package_base_quantity: 1000, is_promotion: false },
+  // Olio EVO
+  { offer_id: 'o_olio_gigante', store_id: 's_gigante_cambiago', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 7.90, package_base_quantity: 1000, is_promotion: true, promo_description: 'Promo Volantino' },
+  { offer_id: 'o_olio_md_camb', store_id: 's_md_cambiago', item_id: 'olio_evo', variant_id: 'v_primadonna_1l', variant_name: 'Olio EVO Frantoio MD 1L', brand: 'MD', package_price: 6.99, package_base_quantity: 1000, is_promotion: false },
+  { offer_id: 'o_olio_famila', store_id: 's_famila_gorgonzola', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 6.89, package_base_quantity: 1000, is_promotion: true, promo_description: 'Sottocosto Famila' },
+  { offer_id: 'o_olio_conad_gorg', store_id: 's_conad_gorgonzola', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 10.50, package_base_quantity: 1000, is_promotion: false },
+  { offer_id: 'o_olio_coop', store_id: 's_coop_bussero', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 6.50, package_base_quantity: 1000, is_promotion: true, promo_description: 'Sconto 40% Soci Coop' },
+  { offer_id: 'o_olio_carosello', store_id: 's_carrefour_carosello', item_id: 'olio_evo', variant_id: 'v_monini_1l', variant_name: 'Olio EVO Classico Monini 1L', brand: 'Monini', package_price: 6.49, package_base_quantity: 1000, is_promotion: true, promo_description: 'Promo Carrefour Iper' },
 
   // Latte UHT
-  { offer_id: 'o_latte_ess', store_id: 's_esselunga', item_id: 'latte', variant_id: 'v_granarolo_1l', variant_name: 'Latte UHT Granarolo 1L', brand: 'Granarolo', package_price: 1.59, package_base_quantity: 1000, is_promotion: false },
-  { offer_id: 'o_latte_coop', store_id: 's_coop', item_id: 'latte', variant_id: 'v_coop_1l', variant_name: 'Latte UHT Coop 1L', brand: 'Coop', package_price: 1.25, package_base_quantity: 1000, is_promotion: false },
-  { offer_id: 'o_latte_lidl', store_id: 's_lidl', item_id: 'latte', variant_id: 'v_milbona_1l', variant_name: 'Latte UHT Milbona 1L', brand: 'Milbona', package_price: 0.99, package_base_quantity: 1000, is_promotion: false },
+  { offer_id: 'o_latte_gigante', store_id: 's_gigante_cambiago', item_id: 'latte', variant_id: 'v_granarolo_1l', variant_name: 'Latte UHT Granarolo 1L', brand: 'Granarolo', package_price: 1.45, package_base_quantity: 1000, is_promotion: false },
+  { offer_id: 'o_latte_md_camb', store_id: 's_md_cambiago', item_id: 'latte', variant_id: 'v_milbona_1l', variant_name: 'Latte UHT Malga Paradiso 1L', brand: 'MD', package_price: 0.95, package_base_quantity: 1000, is_promotion: false },
+  { offer_id: 'o_latte_famila', store_id: 's_famila_gorgonzola', item_id: 'latte', variant_id: 'v_granarolo_1l', variant_name: 'Latte UHT Granarolo 1L', brand: 'Granarolo', package_price: 1.39, package_base_quantity: 1000, is_promotion: true, promo_description: 'Offerta Volantino' },
+  { offer_id: 'o_latte_unes', store_id: 's_unes_pessano', item_id: 'latte', variant_id: 'v_granarolo_1l', variant_name: 'Latte UHT Granarolo 1L', brand: 'Granarolo', package_price: 1.49, package_base_quantity: 1000, is_promotion: false },
+  { offer_id: 'o_latte_ins', store_id: 's_ins_pessano', item_id: 'latte', variant_id: 'v_ins_1l', variant_name: "Latte UHT iN's 1L", brand: "iN's", package_price: 0.99, package_base_quantity: 1000, is_promotion: false },
 
   // Caffè
-  { offer_id: 'o_caffe_ess', store_id: 's_esselunga', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 2.89, package_base_quantity: 250, is_promotion: true, promo_description: 'Prezzi Corti' },
-  { offer_id: 'o_caffe_coop', store_id: 's_coop', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 3.89, package_base_quantity: 250, is_promotion: false },
-  { offer_id: 'o_caffe_conad', store_id: 's_conad', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 3.79, package_base_quantity: 250, is_promotion: false },
-  { offer_id: 'o_caffe_lidl', store_id: 's_lidl', item_id: 'caffe', variant_id: 'v_bellarom_250', variant_name: 'Caffè Bellarom Classico 250g', brand: 'Bellarom', package_price: 2.19, package_base_quantity: 250, is_promotion: false },
+  { offer_id: 'o_caffe_gigante', store_id: 's_gigante_cambiago', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 2.99, package_base_quantity: 250, is_promotion: true, promo_description: 'Offerta Blukart' },
+  { offer_id: 'o_caffe_md_camb', store_id: 's_md_cambiago', item_id: 'caffe', variant_id: 'v_md_250', variant_name: 'Caffè Espresso Casa MD 250g', brand: 'MD', package_price: 2.29, package_base_quantity: 250, is_promotion: false },
+  { offer_id: 'o_caffe_carosello', store_id: 's_carrefour_carosello', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 2.89, package_base_quantity: 250, is_promotion: true, promo_description: 'Offerta Iper' },
+  { offer_id: 'o_caffe_conad', store_id: 's_conad_gorgonzola', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 3.49, package_base_quantity: 250, is_promotion: false },
+  { offer_id: 'o_caffe_coop', store_id: 's_coop_bussero', item_id: 'caffe', variant_id: 'v_lavazza_250', variant_name: 'Caffè Lavazza Qualità Rossa 250g', brand: 'Lavazza', package_price: 3.89, package_base_quantity: 250, is_promotion: false },
 ];
 
 export function App() {
@@ -700,12 +726,13 @@ export function App() {
                 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {stores.map((s) => (
-                    <div key={s.store_id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
+                    <div key={s.store_id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center transition-all hover:border-emerald-200 hover:bg-emerald-50/30">
                       <div className="mx-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm border border-slate-200 text-slate-700">
-                        <StoreIcon className="h-4 w-4" />
+                        <StoreIcon className="h-4 w-4 text-emerald-600" />
                       </div>
                       <div className="text-xs font-bold text-slate-800">{s.chain}</div>
-                      <div className="text-[11px] text-slate-400">Visita: €{s.visit_cost.toFixed(2)}</div>
+                      <div className="text-[10px] text-slate-500 truncate" title={s.name}>{s.name.replace(`${s.chain} - `, '')}</div>
+                      <div className="mt-1 text-[11px] font-semibold text-emerald-700">€{s.visit_cost.toFixed(2)}</div>
                     </div>
                   ))}
                 </div>
