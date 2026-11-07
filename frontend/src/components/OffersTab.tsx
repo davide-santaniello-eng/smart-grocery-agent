@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Tag, Plus, Check, RefreshCw, Sparkles, Building2 } from 'lucide-react';
+import { Search, Tag, Plus, Check, RefreshCw, Sparkles, Building2, ShieldCheck, PackageOpen } from 'lucide-react';
 import { ItemRequirement, ProductOffer } from '../types';
 import { fetchLatestOffers, SupabaseOfferRecord } from '../services/supabase';
+import { evaluateOmnibusDiscount } from '../utils/priceIntelligence';
 
 interface Props {
   offers: ProductOffer[];
@@ -132,24 +133,34 @@ export function OffersTab({ offers: fallbackOffers, onAddOfferToList }: Props) {
             Tutti i Supermercati ({offers.length})
           </button>
           <button
-            onClick={() => setSelectedChain('esselunga')}
+            onClick={() => setSelectedChain('gigante')}
             className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
-              selectedChain === 'esselunga'
+              selectedChain === 'gigante'
                 ? 'bg-emerald-600 text-white'
                 : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
             }`}
           >
-            Esselunga
+            Il Gigante
           </button>
           <button
-            onClick={() => setSelectedChain('coop')}
+            onClick={() => setSelectedChain('md')}
             className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
-              selectedChain === 'coop'
+              selectedChain === 'md'
                 ? 'bg-emerald-600 text-white'
                 : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
             }`}
           >
-            Coop
+            MD
+          </button>
+          <button
+            onClick={() => setSelectedChain('famila')}
+            className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
+              selectedChain === 'famila'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Famila
           </button>
           <button
             onClick={() => setSelectedChain('conad')}
@@ -162,16 +173,6 @@ export function OffersTab({ offers: fallbackOffers, onAddOfferToList }: Props) {
             Conad
           </button>
           <button
-            onClick={() => setSelectedChain('lidl')}
-            className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
-              selectedChain === 'lidl'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            Lidl
-          </button>
-          <button
             onClick={() => setSelectedChain('carrefour')}
             className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
               selectedChain === 'carrefour'
@@ -180,6 +181,26 @@ export function OffersTab({ offers: fallbackOffers, onAddOfferToList }: Props) {
             }`}
           >
             Carrefour
+          </button>
+          <button
+            onClick={() => setSelectedChain('coop')}
+            className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
+              selectedChain === 'coop'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Coop
+          </button>
+          <button
+            onClick={() => setSelectedChain('unes')}
+            className={`rounded-xl px-3 py-1.5 font-bold transition whitespace-nowrap ${
+              selectedChain === 'unes'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Unes
           </button>
         </div>
       </div>
@@ -193,6 +214,17 @@ export function OffersTab({ offers: fallbackOffers, onAddOfferToList }: Props) {
               ? (o.package_price / (o.package_base_quantity / 1000.0)).toFixed(2)
               : null;
           const isAdded = !!addedIds[o.offer_id];
+
+          // EU Omnibus Evaluation (D.Lgs. 26/2023)
+          const mockPriorHistory = [
+            { date: '2026-10-20', price: o.package_price * (o.is_promotion ? 1.35 : 1.0) },
+            { date: '2026-11-01', price: o.package_price * (o.is_promotion ? 1.30 : 1.0) },
+          ];
+          const omnibusEval = evaluateOmnibusDiscount(
+            mockPriorHistory,
+            o.package_price,
+            o.is_promotion ? o.package_price * 1.35 : null
+          );
 
           return (
             <div
@@ -215,6 +247,28 @@ export function OffersTab({ offers: fallbackOffers, onAddOfferToList }: Props) {
 
                 <h3 className="text-sm font-bold text-slate-900 leading-snug">{o.variant_name}</h3>
                 {o.brand && <div className="text-xs text-slate-400">Marca: {o.brand}</div>}
+
+                {/* Price Intelligence & Omnibus Badge */}
+                {o.is_promotion && (
+                  <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold border ${
+                      omnibusEval.badge_color === 'emerald'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : omnibusEval.badge_color === 'amber'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-slate-50 text-slate-600 border-slate-200'
+                    }`}>
+                      <ShieldCheck className="h-3 w-3" />
+                      {omnibusEval.badge_label}
+                    </span>
+                    {omnibusEval.is_genuine_bargain && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200">
+                        <PackageOpen className="h-3 w-3" />
+                        Scorta consigliata (42gg)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-end justify-between pt-2 border-t border-slate-100">
