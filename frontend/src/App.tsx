@@ -42,6 +42,7 @@ import { InStoreModeTab } from './components/InStoreModeTab';
 import { PantryTab } from './components/PantryTab';
 import { OffersTab } from './components/OffersTab';
 import { ReceiptsTab } from './components/ReceiptsTab';
+import { optimizeGroceryBasket } from './utils/optimizer';
 
 // Default initial shopping list
 const INITIAL_ITEMS: ItemRequirement[] = [
@@ -407,121 +408,20 @@ export function App() {
 
   const runOptimization = async () => {
     setLoading(true);
-    try {
-      const payload = {
-        items,
-        stores,
-        offers: offers,
-        config: {
+    // Runs 100% on-device in TypeScript Web/Mobile runtime (zero backend or API costs)
+    setTimeout(() => {
+      try {
+        const localResult = optimizeGroceryBasket(items, stores, offers, {
           max_stores: maxStores,
           enforce_single_sku_per_item: true,
-        },
-      };
-
-      const response = await fetch('/api/v1/shopping/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setResult(data);
-      } else {
-        simulateLocalOptimization();
+        });
+        setResult(localResult);
+      } catch (err) {
+        console.error('Error running client-side optimization:', err);
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      simulateLocalOptimization();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Pure client-side simulation fallback for GitHub Pages offline demo
-  const simulateLocalOptimization = () => {
-    setTimeout(() => {
-      setResult({
-        status: 'OPTIMAL',
-        total_cost: 16.55,
-        product_cost: 14.35,
-        travel_cost: 2.20,
-        estimated_savings_vs_single_store: 4.85,
-        solver_time_ms: 18.4,
-        unfulfilled_items: [],
-        selected_stores: [
-          {
-            store_id: 's_coop',
-            store_name: 'Coop - Piazza Lodi',
-            store_chain: 'Coop',
-            visit_cost: 1.00,
-            subtotal_products: 6.50,
-            items: [
-              {
-                item_id: 'olio_evo',
-                item_name: 'Olio Extra Vergine di Oliva',
-                variant_id: 'v_monini_1l',
-                variant_name: 'Olio EVO Classico Monini 1L',
-                brand: 'Monini',
-                package_quantity: 1,
-                unit_price: 6.50,
-                total_price: 6.50,
-                base_quantity_per_pack: 1000,
-                total_base_quantity: 1000,
-                is_promotion: true,
-              },
-            ],
-          },
-          {
-            store_id: 's_lidl',
-            store_name: 'Lidl',
-            store_chain: 'Lidl',
-            visit_cost: 1.20,
-            subtotal_products: 7.85,
-            items: [
-              {
-                item_id: 'spaghetti',
-                item_name: 'Spaghetti',
-                variant_id: 'v_comb_500',
-                variant_name: 'Spaghetti Combino 500g',
-                brand: 'Combino',
-                package_quantity: 2,
-                unit_price: 0.79,
-                total_price: 1.58,
-                base_quantity_per_pack: 500,
-                total_base_quantity: 1000,
-                is_promotion: false,
-              },
-              {
-                item_id: 'latte',
-                item_name: 'Latte Parzialmente Scremato UHT',
-                variant_id: 'v_milbona_1l',
-                variant_name: 'Latte UHT Milbona 1L',
-                brand: 'Milbona',
-                package_quantity: 2,
-                unit_price: 0.99,
-                total_price: 1.98,
-                base_quantity_per_pack: 1000,
-                total_base_quantity: 2000,
-                is_promotion: false,
-              },
-              {
-                item_id: 'caffe',
-                item_name: 'Caffè Macinato per Moka',
-                variant_id: 'v_bellarom_250',
-                variant_name: 'Caffè Bellarom Classico 250g',
-                brand: 'Bellarom',
-                package_quantity: 2,
-                unit_price: 2.19,
-                total_price: 4.38,
-                base_quantity_per_pack: 250,
-                total_base_quantity: 500,
-                is_promotion: false,
-              },
-            ],
-          },
-        ],
-      });
-    }, 300);
+    }, 150);
   };
 
   const handleCompleteShopping = async (purchasedItems: AllocatedItem[]) => {
