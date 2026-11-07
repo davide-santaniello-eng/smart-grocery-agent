@@ -294,8 +294,11 @@ def generate_sql_insert_script() -> str:
 
     store_vals = []
     for s in CANONICAL_STORES:
+        safe_name = s['name'].replace("'", "''")
+        safe_chain = s['chain'].replace("'", "''")
+        safe_addr = s['address'].replace("'", "''")
         store_vals.append(
-            f"('{s['id']}', NULL, '{s['name']}', '{s['chain']}', '{s['address']}', {s['visit_cost']})"
+            f"('{s['id']}', NULL, '{safe_name}', '{safe_chain}', '{safe_addr}', {s['visit_cost']})"
         )
     lines.append(",\n".join(store_vals) + "\nON CONFLICT (id) DO UPDATE SET visit_cost_override = EXCLUDED.visit_cost_override;")
 
