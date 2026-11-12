@@ -16,6 +16,7 @@ import { ProductRecord, recordReceiptPurchase } from '../services/supabase';
 import { 
   preprocessReceiptImage, 
   parseReceiptText, 
+  computeCatalogMatch,
   ParsedReceipt, 
   ParsedReceiptItem 
 } from '../utils/receiptParser';
@@ -129,6 +130,60 @@ export function ReceiptsTab({ userId, catalogProducts = [], onReceiptProcessed }
       items: updated,
       calculatedSum: Math.round(newSum * 100) / 100,
     });
+  };
+
+  const handleUpdateItemName = (id: string, name: string) => {
+    if (!receipt) return;
+    const match = computeCatalogMatch(name, catalogProducts);
+    const updated = receipt.items.map((i) => {
+      if (i.id !== id) return i;
+      return {
+        ...i,
+        name,
+        matchedProductId: match.product ? match.product.id : i.matchedProductId,
+        baseUnit: match.product ? match.product.base_unit : i.baseUnit,
+        baseQuantity: match.product
+          ? (match.product.base_unit === 'g' || match.product.base_unit === 'ml' ? 500 * i.quantity : i.quantity)
+          : i.quantity,
+      };
+    });
+    setReceipt({ ...receipt, items: updated });
+  };
+
+  const handleUpdateItemQuantity = (id: string, quantity: number) => {
+    if (!receipt) return;
+    const validQty = Math.max(1, quantity);
+    const updated = receipt.items.map((i) => {
+      if (i.id !== id) return i;
+      const matchedProd = catalogProducts.find((p) => p.id === i.matchedProductId);
+      return {
+        ...i,
+        quantity: validQty,
+        baseQuantity: matchedProd
+          ? (matchedProd.base_unit === 'g' || matchedProd.base_unit === 'ml' ? 500 * validQty : validQty)
+          : validQty,
+      };
+    });
+    setReceipt({ ...receipt, items: updated });
+  };
+
+  const handleSelectCatalogProduct = (id: string, productId: string) => {
+    if (!receipt) return;
+    const prod = catalogProducts.find((p) => p.id === productId);
+    const updated = receipt.items.map((i) => {
+      if (i.id !== id) return i;
+      if (!prod) {
+        return { ...i, matchedProductId: undefined };
+      }
+      return {
+        ...i,
+        name: prod.name,
+        matchedProductId: prod.id,
+        baseUnit: prod.base_unit,
+        baseQuantity: prod.base_unit === 'g' || prod.base_unit === 'ml' ? 500 * i.quantity : i.quantity,
+      };
+    });
+    setReceipt({ ...receipt, items: updated });
   };
 
   const handleRemoveItem = (id: string) => {
@@ -323,43 +378,82 @@ export function ReceiptsTab({ userId, catalogProducts = [], onReceiptProcessed }
           {/* Lines Table */}
           <div className="divide-y divide-slate-100">
             {receipt.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between py-2 text-xs gap-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="font-bold text-emerald-700 shrink-0">{item.quantity}x</span>
-                  <div className="truncate">
-                    <span className="font-semibold text-slate-800">{item.name}</span>
-                    {item.matchedProductId && (
-                      <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
-                        <Sparkles className="h-2.5 w-2.5" />
-                        Catalogo
-                      </span>
-                    )}
-                    {item.discount && (
-                      <span className="ml-1.5 text-[10px] text-red-600 font-bold">
-                        (Sconto -€{item.discount.toFixed(2)})
-                      </span>
-                    )}
+              <div key={item.id} className="py-2.5 text-xs border-b border-slate-100 last:border-0 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-bold text-slate-400">Q.tà:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={item.quantity}
+                      onChange={(e) => handleUpdateItemQuantity(item.id, parseInt(e.target.value, 10) || 1)}
+                      className="w-12 rounded-lg border border-slate-200 px-1 py-0.5 text-center font-bold text-emerald-700 text-xs focus:border-emerald-500 focus:outline-none"
+                      title="Modifica quantità acquistata"
+                    />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={item.name}
+                      onChange={(e) => handleUpdateItemName(item.id, e.target.value)}
+                      placeholder="Nome prodotto..."
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1 font-semibold text-slate-800 text-xs focus:border-emerald-500 focus:outline-none focus:bg-white bg-slate-50/50"
+                      title="Clicca per correggere il nome letto dall'OCR"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center font-mono font-bold text-slate-900">
+                      €
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={item.price}
+                        onChange={(e) => handleUpdateItemPrice(item.id, parseFloat(e.target.value) || 0)}
+                        className="w-16 rounded-lg border border-slate-200 px-1.5 py-0.5 text-right text-xs focus:border-emerald-500 focus:outline-none"
+                        title="Modifica prezzo pagato"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleRemoveItem(item.id)}
+                      className="rounded p-1 text-slate-300 hover:text-red-500 transition"
+                      title="Rimuovi riga"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex items-center font-mono font-bold text-slate-900">
-                    €
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.price}
-                      onChange={(e) => handleUpdateItemPrice(item.id, parseFloat(e.target.value) || 0)}
-                      className="w-16 rounded-lg border border-slate-200 px-1.5 py-0.5 text-right text-xs focus:border-emerald-500 focus:outline-none"
-                    />
+                {/* Sub-row: Catalog Link Selector & Discount info */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pl-1">
+                  <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                    <span className="text-[10px] text-slate-400">Associa a catalogo:</span>
+                    <select
+                      value={item.matchedProductId || ''}
+                      onChange={(e) => handleSelectCatalogProduct(item.id, e.target.value)}
+                      className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700 focus:border-emerald-500 focus:outline-none max-w-xs"
+                    >
+                      <option value="">-- Nessun collegamento automatico --</option>
+                      {catalogProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.base_unit})
+                        </option>
+                      ))}
+                    </select>
+                    {item.matchedProductId && (
+                      <span className="inline-flex items-center gap-0.5 text-emerald-600 font-bold text-[10px]">
+                        <Sparkles className="h-3 w-3" /> Collegato
+                      </span>
+                    )}
                   </div>
-                  <button
-                    onClick={() => handleRemoveItem(item.id)}
-                    className="rounded p-1 text-slate-300 hover:text-red-500 transition"
-                    title="Rimuovi riga"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+
+                  {item.discount && (
+                    <span className="text-[10px] text-red-600 font-bold">
+                      Sconto volantino applicato: -€{item.discount.toFixed(2)}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

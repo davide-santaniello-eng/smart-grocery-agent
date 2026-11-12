@@ -122,7 +122,7 @@ function normalizeString(str: string): string {
 /**
  * Computes token-level Jaccard & substring similarity between extracted text and catalog product.
  */
-function computeCatalogMatch(rawName: string, catalog: ProductRecord[]): { product?: ProductRecord; score: number } {
+export function computeCatalogMatch(rawName: string, catalog: ProductRecord[]): { product?: ProductRecord; score: number } {
   const normRaw = normalizeString(rawName);
   const rawTokens = normRaw.split(/\s+/).filter((t) => t.length > 2);
 
